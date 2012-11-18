@@ -6,10 +6,19 @@ assumptions for now:
 
 """
 
+from __future__ import print_function
 
+
+INTERVAL = 10 # minutes
+
+def print2(*args,**kwargs):
+	myargs = {'end':''}
+	myargs.update(kwargs)
+	print(*args,**myargs)
 
 from collections import defaultdict
 import itertools
+import re
 import time
 
 # from https://github.com/fabric/fabric/blob/master/fabric/colors.py
@@ -73,10 +82,27 @@ def readactivities(fh):
 	for line in fh.readlines()[2:]:
 		if line.strip():
 			evt = dict()
-			evt['etype'], evt['date'], evt['time'], evt['extra'] = line.strip().split(',',3)
+			evt['otype'], evt['date'], evt['time'], evt['extra'] = line.strip().split(',',3)
 			interval = list(time.strptime(evt['time'], '%I:%M %p'))[3:5] # I is 12 hour time!
-			interval[1] = 15 * divmod(interval[1],15)[0]
+			interval[1] = INTERVAL * divmod(interval[1],INTERVAL)[0]
 			evt['interval'] = tuple(interval)
+
+			# process events some here....
+			otype = evt['otype']
+			etype = ''
+			if otype == 'Diaper':
+				if 'Poop' in evt['extra'].split(',')[0]:
+					etype = 'Poop'
+				else:
+					etype = 'Pee'
+
+				evt['caught'] = bool(re.search('(catch|caught)', evt['extra'],re.I))
+
+
+			else:
+				etype = otype
+
+			evt['etype'] = etype
 			yield evt
 
 
@@ -88,7 +114,7 @@ def dominantofinterval(events_in_interval):
 	""" """
 	#
 	#print events_in_interval
-	for x in ['Diaper','Sleep','Nurse']:
+	for x in ['Poop','Pee','Diaper','Sleep','Nurse']:
 		for e in events_in_interval:
 			if e['etype'] == x:
 				return e
@@ -106,23 +132,36 @@ def group_into_intervals(all_events):
 	return D
 
 
-# 10 minute intervals
-intervals = list(itertools.product(range(24),range(0,51,15)))
+intervals = list(itertools.product(range(24),range(0,60,INTERVAL)))
 
 
 def cyclereport(data):
 	# organize by days
 	# print
-	report_header = red("Report!",bold=True) + '\n'
-	print report_header
+	print(red("Report!"), " -- ",
+		yellow('pee'),green('poop'),blue('nursing'))
+
+	hrfmt = "%%-%ss" % (60/INTERVAL)
+	print(" "*14 + "".join([hrfmt % i for i in range(24)]))
+
 	for day in sorted(data,reverse=True):
-		print "%10s" % day,
+		print2("%-14s" % day)
 
 		for interval in intervals:
 			#print interval
-			print dominantofinterval(data[day][interval])['etype'][0],
+			dom = dominantofinterval(data[day][interval])
+			et = dom['etype']
+			## gross, formatting should live elsewhere
+			if et == 'Poop':
+				print2(green('B',underline=dom['caught']))
+			elif et == 'Pee':
+				print2(yellow('p',underline=dom['caught']))
+			elif et == 'Nurse':
+				print2(blue('n'))
+			else:
+				print2(' ')
 
-		print '\n',
+		print('')
 
 '''
 Alt algorithm:
